@@ -14,6 +14,7 @@ import click
 import cv2
 import numpy as np
 import pims
+import matplotlib.pyplot as plt
 
 from _corners import FrameCorners, CornerStorage, StorageImpl
 from _corners import dump, load, draw, without_short_tracks, create_cli
@@ -38,12 +39,30 @@ def _build_impl(frame_sequence: pims.FramesSequence,
                 builder: _CornerStorageBuilder) -> None:
     # TODO
     image_0 = frame_sequence[0]
+
     corners = FrameCorners(
         np.array([0]),
         np.array([[0, 0]]),
-        np.array([55])
+        np.array([7])
     )
     builder.set_corners_at_frame(0, corners)
+    c = cv2.goodFeaturesToTrack(image_0, 100, 0.01, 10, blockSize=7)
+
+    # convert corners values to integer
+    # So that we will be able to draw circles on them
+    corners = np.int0(c)
+
+    plt.imshow(image_0)
+    plt.show()
+    # draw red color circles on all corners
+    for i in c:
+        x, y = i.ravel()
+        cv2.circle(image_0, (x, y), 3, (255, 0, 0), -1)
+
+        # resulting image
+    plt.imshow(image_0)
+    plt.show()
+
     for frame, image_1 in enumerate(frame_sequence[1:], 1):
         builder.set_corners_at_frame(frame, corners)
         image_0 = image_1
