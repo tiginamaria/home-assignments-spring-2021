@@ -81,5 +81,14 @@ def build(frame_sequence: pims.FramesSequence,
     return builder.build_corner_storage()
 
 
+def calc_track_len_array_mapping(corner_storage):
+    return np.zeros(len(corner_storage))
+
+
+def calc_track_interval_mappings(corner_storage):
+    return np.array([f for f, _ in enumerate(corner_storage)]), \
+           np.array([f for f, _ in enumerate(corner_storage)])
+
+
 if __name__ == '__main__':
     create_cli(build)()  # pylint:disable=no-value-for-parameter
