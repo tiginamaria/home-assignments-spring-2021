@@ -35,37 +35,75 @@ class _CornerStorageBuilder:
         return StorageImpl(item[1] for item in sorted(self._corners.items()))
 
 
+def _show_corners(img, corners_points):
+    for i in np.int0(corners_points):
+        x, y = i.ravel()
+        cv2.circle(img, (x, y), 3, (255, 0, 0), -1)
+
+    plt.imshow(img)
+    plt.show()
+
+
+def _show_tracks(img_0, track_corners_0, img_1, track_corners_1):
+    mask = np.zeros_like(img_0)
+    color = np.random.randint(0, 255, (100, 3))
+
+    for i, (new, old) in enumerate(zip(track_corners_0, track_corners_1)):
+        a, b = new.ravel()
+        c, d = old.ravel()
+        mask = cv2.line(mask, (a, b), (c, d), color[i].tolist(), 2)
+        img_1 = cv2.circle(img_1, (a, b), 5, color[i].tolist(), -1)
+
+    img = cv2.add(img_1, mask)
+    cv2.imshow('tracks', img)
+
+
 def _build_impl(frame_sequence: pims.FramesSequence,
                 builder: _CornerStorageBuilder) -> None:
-    # TODO
-    image_0 = frame_sequence[0]
-
-    corners = FrameCorners(
-        np.array([0]),
-        np.array([[0, 0]]),
-        np.array([7])
+    block_size = 7
+    prev_img = frame_sequence[0]
+    prev_points = cv2.goodFeaturesToTrack(prev_img, 100, 0.01, 10, blockSize=block_size)
+    last_id = len(prev_points) - 1
+    prev_corners = FrameCorners(
+        np.array([i for i in range(last_id)]),
+        np.array(prev_points),
+        np.array([block_size for _ in range(last_id)])
     )
-    builder.set_corners_at_frame(0, corners)
-    c = cv2.goodFeaturesToTrack(image_0, 100, 0.01, 10, blockSize=7)
+    builder.set_corners_at_frame(0, prev_corners)
+    # _show_corners(prev_img, prev_points)
+    lk_params = dict(winSize=(15, 15),
+                     maxLevel=2,
+                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-    # convert corners values to integer
-    # So that we will be able to draw circles on them
-    corners = np.int0(c)
+    prev_img = (cv2.merge((prev_img, prev_img, prev_img)) * 255.999).astype(np.uint8)
 
-    plt.imshow(image_0)
-    plt.show()
-    # draw red color circles on all corners
-    for i in c:
-        x, y = i.ravel()
-        cv2.circle(image_0, (x, y), 3, (255, 0, 0), -1)
+    for frame_id, img in enumerate(frame_sequence[1:]):
+        img = (cv2.merge((img, img, img)) * 255.999).astype(np.uint8)
+        points, prev_st, _ = cv2.calcOpticalFlowPyrLK(prev_img, img, prev_corners.points, None, **lk_params)
+        # _show_corners(img, points)
 
-        # resulting image
-    plt.imshow(image_0)
-    plt.show()
+        prev_points, st, _ = cv2.calcOpticalFlowPyrLK(img, prev_img, points, None, **lk_params)
 
-    for frame, image_1 in enumerate(frame_sequence[1:], 1):
-        builder.set_corners_at_frame(frame, corners)
-        image_0 = image_1
+        points_dists = abs(prev_corners.points - prev_points).reshape(-1, 2).max(-1)
+        track_points = points_dists < 1
+
+        def _inc(value):
+            value += 1
+            return value
+
+        corners_ids = [prev_corners.ids[i] if track_points[i] else _inc(last_id) for i in range(len(points))]
+        corners = FrameCorners(
+            np.array(corners_ids),
+            np.array(points),
+            np.array([block_size for _ in range(len(prev_points))])
+        )
+        builder.set_corners_at_frame(frame_id, corners)
+
+        _show_corners(img, points)
+        _show_tracks(prev_img, prev_corners.points, img, corners.points)
+
+        prev_corners = corners
+        prev_img = img.copy()
 
 
 def build(frame_sequence: pims.FramesSequence,
