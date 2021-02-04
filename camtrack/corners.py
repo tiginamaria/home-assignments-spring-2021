@@ -7,6 +7,8 @@ __all__ = [
     'dump',
     'load',
     'draw',
+    'calc_track_interval_mappings',
+    'calc_track_len_array_mapping',
     'without_short_tracks'
 ]
 
@@ -16,8 +18,18 @@ import numpy as np
 import pims
 import matplotlib.pyplot as plt
 
-from _corners import FrameCorners, CornerStorage, StorageImpl
-from _corners import dump, load, draw, without_short_tracks, create_cli
+from _corners import (
+    FrameCorners,
+    CornerStorage,
+    StorageImpl,
+    dump,
+    load,
+    draw,
+    calc_track_interval_mappings,
+    calc_track_len_array_mapping,
+    without_short_tracks,
+    create_cli
+)
 
 
 class _CornerStorageBuilder:
@@ -124,16 +136,6 @@ def build(frame_sequence: pims.FramesSequence,
         builder = _CornerStorageBuilder()
         _build_impl(frame_sequence, builder)
     return builder.build_corner_storage()
-
-
-def calc_track_len_array_mapping(corner_storage):
-    return np.zeros(len(corner_storage))
-
-
-def calc_track_interval_mappings(corner_storage):
-    return np.array([f for f, _ in enumerate(corner_storage)]), \
-           np.array([f for f, _ in enumerate(corner_storage)])
-
 
 if __name__ == '__main__':
     create_cli(build)()  # pylint:disable=no-value-for-parameter
