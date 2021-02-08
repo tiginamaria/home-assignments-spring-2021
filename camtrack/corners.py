@@ -47,52 +47,21 @@ class _CornerStorageBuilder:
         return StorageImpl(item[1] for item in sorted(self._corners.items()))
 
 
-def _show_corners(img, corners_points):
+def _show_corners(img, old_points, new_points):
     img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    for i in np.int0(corners_points):
-        x, y = i.ravel()
+    for c in np.int0(new_points):
+        x, y = c.ravel()
+        cv2.circle(img, (x, y), 3, (1, 0, 0), -1)
+    for c in np.int0(old_points):
+        x, y = c.ravel()
         cv2.circle(img, (x, y), 3, (0, 0, 1), -1)
-
-    cv2.imshow('corners', img)
+    cv2.imshow(f"corners", img)
     cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-
-
-def _show_tracks(img_0, track_corners_0, img_1, track_corners_1):
-    mask = np.zeros_like(img_0)
-    color = np.random.randint(0, 255, (100, 3))
-
-    for i, (new, old) in enumerate(zip(track_corners_0, track_corners_1)):
-        a, b = new.ravel()
-        c, d = old.ravel()
-        mask = cv2.line(mask, (a, b), (c, d), color[i].tolist(), 2)
-        img_1 = cv2.circle(img_1, (a, b), 5, color[i].tolist(), -1)
-
-    img = cv2.add(img_1, mask)
-    cv2.imshow(img)
-    # cv2.waitKey(0)
-    # cv2.destroyWindow('')
-
-
-def make_not_grey(img):
-    return (cv2.merge((img, img, img)) * 256).astype(np.uint8)
+    cv2.destroyAllWindows()
 
 
 def make_uint8(img):
     return (img * 256).astype(np.uint8)
-
-def best_params():
-    block_size = 7
-    winSize = 15
-    qualityLevel = 0.001
-    maxCorners = 200
-    minDistance = 5
-    minRadius = 5
-    maxLevel = 5
-
-    lk_params = dict(winSize=(winSize, winSize),
-                     maxLevel=maxLevel,
-                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 
 def _build_impl(frame_sequence: pims.FramesSequence,
@@ -118,11 +87,10 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         if frame_id == 0:
             points = cv2.goodFeaturesToTrack(img, maxCorners, qualityLevel, minDistance, blockSize=block_size)
             corners_ids = [i for i in range(len(points))]
-            last_id = len(points)
+            new_points_count = last_id = len(points)
         else:
             cur_points = cv2.goodFeaturesToTrack(img, maxCorners, qualityLevel, minDistance, blockSize=block_size)
             track_points, track_st, _ = cv2.calcOpticalFlowPyrLK(prev_img, img, prev_corners.points, None, **lk_params)
-            # new_points, new_st, _ = cv2.calcOpticalFlowPyrLK(img, prev_img, cur_points, None, **lk_params)
 
             corners_ids = []
             points = []
@@ -138,14 +106,19 @@ def _build_impl(frame_sequence: pims.FramesSequence,
                     corners_ids.append(prev_corners.ids[i][0])
                     points.append(track_points[i])
 
+            new_points_count = 0
             for i in range(len(cur_points)):
                 dist = np.linalg.norm(track_points - cur_points[i][0], axis=1)
                 if len(dist) == 0 or dist[np.argmin(dist)] > minRadius:
                     corners_ids.append(last_id)
                     points.append(cur_points[i][0])
                     last_id += 1
+                    new_points_count += 1
 
-        _show_corners(draw_img, points)
+        # if new_points_count == 0:
+        #     _show_corners(draw_img, points[:-new_points_count], [])
+        # else:
+        #     _show_corners(draw_img, points[:-new_points_count], points[-new_points_count:])
 
         corners = FrameCorners(
             np.array(corners_ids),
@@ -155,7 +128,6 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         builder.set_corners_at_frame(frame_id, corners)
         prev_corners = corners
         prev_img = img.copy()
-    # print("hello")
 
 
 def build(frame_sequence: pims.FramesSequence,
