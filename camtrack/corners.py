@@ -69,7 +69,7 @@ def _build_impl(frame_sequence: pims.FramesSequence,
     block_size = 9
     winSize = 45
     qualityLevel = 0.0005
-    maxCorners = 200
+    maxCorners = frame_sequence[0].shape[0] * frame_sequence[0].shape[1] // 2000
     minDistance = 30
     minRadius = 30
     maxLevel = 5
