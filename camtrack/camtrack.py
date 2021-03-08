@@ -44,7 +44,7 @@ class CameraTrackBuilder:
 
         self.view_mats[known_view_1[0]] = pose_to_view_mat3x4(known_view_1[1])
         self.view_mats[known_view_2[0]] = pose_to_view_mat3x4(known_view_2[1])
-        self._update_points(known_view_1[0], known_view_2[0])
+        self._update_points(known_view_1[0], known_view_2[0], None)
 
     def _prepare_view_mats(self) -> List[np.ndarray]:
         for i in range(self.frames_cnt):
@@ -58,40 +58,43 @@ class CameraTrackBuilder:
             if self.view_mats[frame_id] is not None:
                 continue
 
-            corner_ids = []
-            points_3d = []
-            points_2d = []
-            for corner_id, point in zip(corners.ids, corners.points):
-                cloud_corner_id, _ = np.where(self.point_cloud_builder.ids == corner_id)
-                if len(cloud_corner_id) == 0:
-                    continue
-                corner_ids.append(corner_id)
-                points_3d.append(self.point_cloud_builder.points[cloud_corner_id[0]])
-                points_2d.append(point)
+            intersections, corners_ids, cloud_ids = np.intersect1d(corners.ids,
+                                                                   self.point_cloud_builder.ids,
+                                                                   return_indices=True)
+            points_2d = corners.points[corners_ids]
+            points_3d = self.point_cloud_builder.points[cloud_ids]
 
-            if len(corner_ids) < 6:
-                print(f'Cannot process frame with corners count less then 3')
+            if len(intersections) < 3:
+                continue
+
+            if len(intersections) < 6:
+                print(f'Cannot process frame with corners count less then 6')
                 continue
 
             print(f'Processing frame: {frame_id}')
-            retval, rvec, tvec, inliers = cv2.solvePnPRansac(np.array(points_3d), np.array(points_2d),
-                                                             self.intrinsic_mat, None, flags=cv2.SOLVEPNP_ITERATIVE)
-            if not retval:
+            retval0, rvec, tvec, inliers = cv2.solvePnPRansac(points_3d, points_2d,
+                                                              self.intrinsic_mat, None)
+            retval1, rvec, tvec = cv2.solvePnP(points_3d[inliers], points_2d[inliers],
+                                               self.intrinsic_mat, None,
+                                               rvec=rvec, tvec=tvec, useExtrinsicGuess=True)
+            if not retval0 or not retval1:
                 print(f'Cannot process frame')
                 continue
 
             self.view_mats[frame_id] = rodrigues_and_translation_to_view_mat3x4(rvec, tvec)
             print(f'Inlieners count: {len(inliers)}')
-            for next_frame_id, corners in enumerate(self.corner_storage):
+
+            outliers = np.delete(intersections, inliers)
+            for next_frame_id, _ in enumerate(self.corner_storage):
                 if self.view_mats[next_frame_id] is not None:
-                    self._update_points(frame_id, next_frame_id)
+                    self._update_points(frame_id, next_frame_id, outliers)
 
         return self._prepare_view_mats()
 
-    def _update_points(self, frame_id1, frame_id2):
+    def _update_points(self, frame_id1, frame_id2, outliers):
         frame1, frame2 = self.corner_storage[frame_id1], self.corner_storage[frame_id2]
         mat1, mat2 = self.view_mats[frame_id1], self.view_mats[frame_id2]
-        correspondences = build_correspondences(frame1, frame2)
+        correspondences = build_correspondences(frame1, frame2, outliers)
         if len(correspondences.ids) == 0:
             return 0
         points, ids, _ = triangulate_correspondences(correspondences, mat1, mat2,
@@ -100,7 +103,7 @@ class CameraTrackBuilder:
         print(f'Updated points count: {len(points)}')
         self.point_cloud_builder.add_points(ids, points)
         print(f'Total points count: {len(self.point_cloud_builder.ids)}')
-        return len(ids)
+        return ids
 
 
 def track_and_calc_colors(camera_parameters: CameraParameters,
@@ -119,7 +122,8 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
     )
 
     point_cloud_builder = PointCloudBuilder()
-    camera_track_builder = CameraTrackBuilder(corner_storage, intrinsic_mat, point_cloud_builder, known_view_1, known_view_2)
+    camera_track_builder = CameraTrackBuilder(corner_storage, intrinsic_mat, point_cloud_builder, known_view_1,
+                                              known_view_2)
     view_mats = camera_track_builder.build_camera_mats()
 
     calc_point_cloud_colors(
