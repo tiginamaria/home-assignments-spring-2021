@@ -78,7 +78,7 @@ class CameraTrackBuilder:
                 e_mask = e_mask.flatten() == 1
                 h_mask = h_mask.flatten() == 1
                 e_inliers = points1[e_mask]
-                h_inliers = points2[h_mask]
+                h_inliers = points1[h_mask]
 
                 if len(e_inliers) / len(h_inliers) < 0.9 or len(e_inliers) < 10:
                     print("too close centers, can not build essential matrix")
