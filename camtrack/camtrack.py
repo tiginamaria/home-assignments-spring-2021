@@ -24,17 +24,6 @@ from _camtrack import (
 from corners import CornerStorage
 from data3d import CameraParameters, PointCloud, Pose
 
-MAX_REPROJECTION_ERROR = 1.0
-MAX_TRIANGULATION_ANGLE_DEG = 1.0
-MIN_DEPTH = 0.1
-
-THRESHOLD = 1.0
-CONFIDENCE = 0.99
-REPROJECTION_ERROR = 2.0
-MIN_ANGLE = 1
-MIN_INLINERS = 10
-ESSENTIAL_VALIDATION_THRESHOLD = 0.9
-
 
 class CameraTrackBuilder:
     def __init__(self,
@@ -43,9 +32,9 @@ class CameraTrackBuilder:
                  point_cloud_builder: PointCloudBuilder,
                  known_view_1: Optional[Tuple[int, Pose]] = None,
                  known_view_2: Optional[Tuple[int, Pose]] = None):
-        self.parameters = TriangulationParameters(max_reprojection_error=MAX_REPROJECTION_ERROR,
-                                                  min_triangulation_angle_deg=MAX_TRIANGULATION_ANGLE_DEG,
-                                                  min_depth=MIN_DEPTH)
+        self.parameters = TriangulationParameters(max_reprojection_error=1.0,
+                                                  min_triangulation_angle_deg=1.0,
+                                                  min_depth=0.1)
         self.corner_storage = corner_storage
         self.intrinsic_mat = intrinsic_mat
         self.point_cloud_builder = point_cloud_builder
@@ -67,14 +56,9 @@ class CameraTrackBuilder:
         self._update_points(frame_id1, frame_id2, None)
 
     def _calc_camera_mats(self):
-        essential_validation_threshold = 0.9
-        min_inliers = 10
-
         best_points_count = 0
         best_frame_id1, best_frame_id2 = None, None
         best_mat1, best_mat2 = eye3x4(), None
-
-        triangulation_parameters = TriangulationParameters(2.0, 1.0, 0)
 
         for frame_id1 in range(0, self.frames_cnt, 3):
             for frame_id2 in range(frame_id1 + 2, min(frame_id1 + 100, self.frames_cnt), 3):
@@ -96,7 +80,7 @@ class CameraTrackBuilder:
                 e_inliers = points1[e_mask]
                 h_inliers = points2[h_mask]
 
-                if len(e_inliers) / len(h_inliers) < essential_validation_threshold or len(e_inliers) < min_inliers:
+                if len(e_inliers) / len(h_inliers) < 0.9 or len(e_inliers) < 10:
                     print("too close centers, can not build essential matrix")
                     continue
 
@@ -108,8 +92,7 @@ class CameraTrackBuilder:
                 for R in [R1, R2]:
                     for t in [t, -t]:
                         mat1, mat2 = best_mat1, np.hstack((R, t))
-                        points, ids, _ = triangulate_correspondences(corrs, mat1, mat2, self.intrinsic_mat,
-                                                                     triangulation_parameters)
+                        points, ids, _ = triangulate_correspondences(corrs, mat1, mat2, self.intrinsic_mat, self.parameters)
 
                         if len(points) > best_points_count:
                             best_points_count = len(points)
