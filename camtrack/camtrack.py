@@ -77,8 +77,8 @@ class CameraTrackBuilder:
 
                 points1, points2 = corrs.points_1, corrs.points_2
 
-                e_retval, e_mask = cv2.findEssentialMat(points1, points2, self.intrinsic_mat,
-                                                        method=cv2.RANSAC, prob=0.99, threshold=3.0)
+                e_retval, e_mask = cv2.findEssentialMat(points1, points2, self.intrinsic_mat, method=cv2.RANSAC,
+                                                        prob=0.99, threshold=3.0)
                 h_retval, h_mask = cv2.findHomography(points1, points2, method=cv2.RANSAC, ransacReprojThreshold=3.0)
 
                 e_mask = e_mask.flatten() == 1
@@ -122,6 +122,8 @@ class CameraTrackBuilder:
 
     def build_camera_mats(self) -> List[np.ndarray]:
         for frame_id, corners in enumerate(self.corner_storage):
+            print(f'Processing frame: {frame_id}')
+
             if self.view_mats[frame_id] is not None:
                 continue
 
@@ -131,15 +133,16 @@ class CameraTrackBuilder:
             points_2d = corners.points[corners_ids]
             points_3d = self.point_cloud_builder.points[cloud_ids]
 
-            if len(intersections) < 3:
-                continue
-
-            if len(intersections) < 6:
+            if len(intersections) < 4:
                 print(f'Cannot process frame with corners count less then 6')
                 continue
 
-            print(f'Processing frame: {frame_id}')
             retval0, rvec, tvec, inliers = cv2.solvePnPRansac(points_3d, points_2d, self.intrinsic_mat, None)
+
+            if len(inliers) < 4:
+                print(f'Cannot process frame with inliers count less then 6')
+                continue
+
             retval1, rvec, tvec = cv2.solvePnP(points_3d[inliers], points_2d[inliers], self.intrinsic_mat, None,
                                                rvec=rvec, tvec=tvec, useExtrinsicGuess=True)
             if not retval0 or not retval1:
