@@ -87,6 +87,7 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         np.array(points),
         np.array([block_size for _ in range(len(points))])
     )
+    builder.set_corners_at_frame(0, prev_corners)
 
     for frame_id, img in enumerate(frame_sequence[1:], 1):
         track_points, track_st, _ = cv2.calcOpticalFlowPyrLK(cv2.convertScaleAbs(prev_img, alpha=255),
