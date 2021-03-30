@@ -337,16 +337,16 @@ def run_tests(config, output_dir, corners_dir):
         _write_poses(track, path.join(test_dir, 'track.yml'))
         _write_point_cloud(point_cloud, path.join(test_dir, 'point_cloud.yml'))
 
-        r_errors, t_errors = cmptrack.calc_errors(ground_truth, track)
-        all_r_errors[-1] = r_errors
-        all_t_errors[-1] = t_errors
+        # r_errors, t_errors = cmptrack.calc_errors(ground_truth, track)
+        # all_r_errors[-1] = r_errors
+        # all_t_errors[-1] = t_errors
 
-        tracking_ok_count += _describe_and_check_camera_track_errors(
-            r_errors,
-            t_errors,
-            test_info.translation_error_allowed,
-            test_info.rotation_deg_error_allowed
-        )
+        # tracking_ok_count += _describe_and_check_camera_track_errors(
+        #     r_errors,
+        #     t_errors,
+        #     test_info.translation_error_allowed,
+        #     test_info.rotation_deg_error_allowed
+        # )
 
     all_r_errors = np.concatenate(all_r_errors)
     all_t_errors = np.concatenate(all_t_errors)

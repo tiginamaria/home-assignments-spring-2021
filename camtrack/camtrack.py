@@ -32,9 +32,14 @@ class CameraTrackBuilder:
                  point_cloud_builder: PointCloudBuilder,
                  known_view_1: Optional[Tuple[int, Pose]] = None,
                  known_view_2: Optional[Tuple[int, Pose]] = None):
-        self.parameters = TriangulationParameters(max_reprojection_error=1.0,
+
+        self.init_parameters = TriangulationParameters(max_reprojection_error=3.0,
+                                                       min_triangulation_angle_deg=5.0,
+                                                       min_depth=5.0)
+
+        self.parameters = TriangulationParameters(max_reprojection_error=3.0,
                                                   min_triangulation_angle_deg=1.0,
-                                                  min_depth=0.1)
+                                                  min_depth=0.5)
         self.corner_storage = corner_storage
         self.intrinsic_mat = intrinsic_mat
         self.point_cloud_builder = point_cloud_builder
@@ -60,39 +65,47 @@ class CameraTrackBuilder:
         best_frame_id1, best_frame_id2 = None, None
         best_mat1, best_mat2 = eye3x4(), None
 
-        for frame_id1 in range(0, self.frames_cnt, 3):
-            for frame_id2 in range(frame_id1 + 2, min(frame_id1 + 100, self.frames_cnt), 3):
+        for frame_id1 in range(0, self.frames_cnt):
+            for frame_id2 in range(frame_id1 + 1, min(frame_id1 + 100, self.frames_cnt)):
                 print(f'try frames pair ({frame_id1}, {frame_id2}) to build camera mats')
 
                 corrs = build_correspondences(self.corner_storage[frame_id1],
                                               self.corner_storage[frame_id2])
                 points_ids = corrs.ids
-                if len(points_ids) < 10:
+                if len(points_ids) < 6:
                     continue
 
                 points1, points2 = corrs.points_1, corrs.points_2
 
-                e_retval, e_mask = cv2.findEssentialMat(points1, points2, self.intrinsic_mat, method=cv2.RANSAC, threshold=1)
-                h_retval, h_mask = cv2.findHomography(points1, points2, method=cv2.RANSAC, ransacReprojThreshold=2)
+                e_retval, e_mask = cv2.findEssentialMat(points1, points2, self.intrinsic_mat,
+                                                        method=cv2.RANSAC, prob=0.99, threshold=3.0)
+                h_retval, h_mask = cv2.findHomography(points1, points2, method=cv2.RANSAC, ransacReprojThreshold=3.0)
 
                 e_mask = e_mask.flatten() == 1
                 h_mask = h_mask.flatten() == 1
                 e_inliers = points1[e_mask]
                 h_inliers = points1[h_mask]
 
-                if len(e_inliers) / len(h_inliers) < 0.9 or len(e_inliers) < 10:
-                    print("too close centers, can not build essential matrix")
+                if len(e_inliers) / len(h_inliers) < 0.9 or len(e_inliers) < 6:
+                    print("can not build essential matrix: too close centers")
+                    continue
+
+                if len(e_inliers) < 6:
+                    print("can not build essential matrix: not enough inlines")
                     continue
 
                 e_outliers = np.delete(points_ids, e_mask)
-                corrs = build_correspondences(self.corner_storage[frame_id1], self.corner_storage[frame_id2], e_outliers)
+                corrs = build_correspondences(self.corner_storage[frame_id1], self.corner_storage[frame_id2],
+                                              e_outliers)
 
                 R1, R2, t = cv2.decomposeEssentialMat(e_retval)
 
                 for R in [R1, R2]:
                     for t in [t, -t]:
                         mat1, mat2 = best_mat1, np.hstack((R, t))
-                        points, ids, _ = triangulate_correspondences(corrs, mat1, mat2, self.intrinsic_mat, self.parameters)
+                        points, ids, _ = triangulate_correspondences(corrs, mat1, mat2,
+                                                                     self.intrinsic_mat,
+                                                                     self.init_parameters)
 
                         if len(points) > best_points_count:
                             best_points_count = len(points)
@@ -126,10 +139,8 @@ class CameraTrackBuilder:
                 continue
 
             print(f'Processing frame: {frame_id}')
-            retval0, rvec, tvec, inliers = cv2.solvePnPRansac(points_3d, points_2d,
-                                                              self.intrinsic_mat, None)
-            retval1, rvec, tvec = cv2.solvePnP(points_3d[inliers], points_2d[inliers],
-                                               self.intrinsic_mat, None,
+            retval0, rvec, tvec, inliers = cv2.solvePnPRansac(points_3d, points_2d, self.intrinsic_mat, None)
+            retval1, rvec, tvec = cv2.solvePnP(points_3d[inliers], points_2d[inliers], self.intrinsic_mat, None,
                                                rvec=rvec, tvec=tvec, useExtrinsicGuess=True)
             if not retval0 or not retval1:
                 print(f'Cannot process frame')
@@ -147,10 +158,10 @@ class CameraTrackBuilder:
 
     def _update_points(self, frame_id1, frame_id2, outliers):
         frame1, frame2 = self.corner_storage[frame_id1], self.corner_storage[frame_id2]
-        mat1, mat2 = self.view_mats[frame_id1], self.view_mats[frame_id2]
         correspondences = build_correspondences(frame1, frame2, outliers)
         if len(correspondences.ids) == 0:
             return 0
+        mat1, mat2 = self.view_mats[frame_id1], self.view_mats[frame_id2]
         points, ids, _ = triangulate_correspondences(correspondences, mat1, mat2,
                                                      self.intrinsic_mat,
                                                      self.parameters)
@@ -166,7 +177,6 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
                           known_view_1: Optional[Tuple[int, Pose]] = None,
                           known_view_2: Optional[Tuple[int, Pose]] = None) \
         -> Tuple[List[Pose], PointCloud]:
-
     rgb_sequence = frameseq.read_rgb_f32(frame_sequence_path)
     intrinsic_mat = to_opencv_camera_mat3x3(
         camera_parameters,
@@ -174,7 +184,9 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
     )
 
     point_cloud_builder = PointCloudBuilder()
-    camera_track_builder = CameraTrackBuilder(corner_storage, intrinsic_mat, point_cloud_builder,
+    camera_track_builder = CameraTrackBuilder(corner_storage,
+                                              intrinsic_mat,
+                                              point_cloud_builder,
                                               known_view_1, known_view_2)
     view_mats = camera_track_builder.build_camera_mats()
 

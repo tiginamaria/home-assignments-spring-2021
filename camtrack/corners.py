@@ -89,10 +89,10 @@ def _build_impl(frame_sequence: pims.FramesSequence,
     )
 
     for frame_id, img in enumerate(frame_sequence[1:], 1):
-        prev_img_8bit = cv2.convertScaleAbs(prev_img, alpha=255)
-        img_8bit = cv2.convertScaleAbs(img, alpha=255)
-        track_points, track_st, _ = cv2.calcOpticalFlowPyrLK(prev_img_8bit, img_8bit, prev_corners.points, None,
-                                                             **lk_params)
+        track_points, track_st, _ = cv2.calcOpticalFlowPyrLK(cv2.convertScaleAbs(prev_img, alpha=255),
+                                                             cv2.convertScaleAbs(img, alpha=255),
+                                                             prev_corners.points,
+                                                             None, **lk_params)
 
         track_st = track_st.reshape(-1)
         points = track_points[track_st == 1]
